@@ -562,11 +562,13 @@ async fn serve_inner(args: Args, telemetry_enabled: bool) -> ExitCode {
         runtime
     };
     let runtime = Arc::new(runtime);
-    // Every audience source the policy references answers once before the runtime serves:
-    // a source that is down or reports a malformed reader stops the start here.
+    // Every audience source the policy references answers once before the runtime
+    // serves. A source that is down would leave `self`/`internal` unanswerable, but
+    // those decisions already fail closed at call time, so a transient outage here
+    // is a warning rather than a refusal to start: a GitHub hiccup must not take
+    // the whole runtime down.
     if let Err(error) = runtime.probe_sources().await {
-        eprintln!("appa runtime: {error}");
-        return ExitCode::FAILURE;
+        eprintln!("appa runtime: warning: audience source unavailable: {error}");
     }
 
     let state = AppState {

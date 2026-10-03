@@ -1279,6 +1279,7 @@ mod tests {
             url: Some(url),
             key: Some(crate::config::ProfileKey::Set(Token::new("sekret".to_string()))),
             limits: MODEL_LIMITS,
+            think: None,
         }
     }
 

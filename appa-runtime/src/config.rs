@@ -448,6 +448,9 @@ pub struct LlmProfile {
     pub url: Option<String>,
     pub key: Option<ProfileKey>,
     pub limits: ModelLimits,
+    /// The `think` level (`low`/`medium`/`high`/`max`), `false`/`off` for no
+    /// reasoning, or `None` for the provider default.
+    pub think: Option<String>,
 }
 
 impl LlmProfile {
@@ -1031,6 +1034,7 @@ struct RawLlm {
     token_env: Option<String>,
     timeout_ms: Option<u64>,
     max_concurrent: Option<u32>,
+    think: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2307,6 +2311,7 @@ fn resolve_llm(raw: RawLlm, keys: KeySource<'_>) -> Result<LlmProfile, ConfigErr
         url,
         key,
         limits,
+        think: raw.think,
     })
 }
 

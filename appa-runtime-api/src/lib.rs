@@ -26,6 +26,11 @@ pub enum AdapterName {
     ClaudeCode,
     Kagent,
     Amp,
+    /// OpenCode, a coding harness whose plugins are TypeScript and whose
+    /// model-visible tool id is a flat, sanitized string. The wire carries
+    /// that raw spelling; the adapter (`appa-adapter-opencode`) identifies
+    /// it.
+    Opencode,
     /// A host that embeds the runtime in its own process. There is no
     /// served process and no wire: the host builds every event itself,
     /// identifies each call through the [`Adapter`] it opened the runtime
@@ -36,7 +41,12 @@ pub enum AdapterName {
 
 impl AdapterName {
     /// The adapters a served runtime can be started with.
-    pub const ALL: [AdapterName; 3] = [AdapterName::ClaudeCode, AdapterName::Kagent, AdapterName::Amp];
+    pub const ALL: [AdapterName; 4] = [
+        AdapterName::ClaudeCode,
+        AdapterName::Kagent,
+        AdapterName::Amp,
+        AdapterName::Opencode,
+    ];
 
     pub fn parse(text: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|host| host.as_str() == text)
@@ -47,6 +57,7 @@ impl AdapterName {
             AdapterName::ClaudeCode => "claude-code",
             AdapterName::Kagent => "kagent",
             AdapterName::Amp => "amp",
+            AdapterName::Opencode => "opencode",
             AdapterName::Embedded => "embedded",
         }
     }
@@ -58,6 +69,7 @@ impl AdapterName {
             AdapterName::ClaudeCode => "cc",
             AdapterName::Kagent => "kagent",
             AdapterName::Amp => "amp",
+            AdapterName::Opencode => "oc",
             AdapterName::Embedded => "embedded",
         }
     }
@@ -71,7 +83,7 @@ impl AdapterName {
     /// host has its own surface to show a review on.
     pub fn review_channel(self) -> ReviewChannel {
         match self {
-            AdapterName::ClaudeCode | AdapterName::Amp => ReviewChannel::Runtime,
+            AdapterName::ClaudeCode | AdapterName::Amp | AdapterName::Opencode => ReviewChannel::Runtime,
             AdapterName::Kagent | AdapterName::Embedded => ReviewChannel::Host,
         }
     }
@@ -104,7 +116,7 @@ impl std::str::FromStr for AdapterName {
         AdapterName::ALL
             .into_iter()
             .find(|name| name.as_str() == text)
-            .ok_or_else(|| format!("{text} is not an adapter; one of: claude-code, kagent, amp"))
+            .ok_or_else(|| format!("{text} is not an adapter; one of: claude-code, kagent, amp, opencode"))
     }
 }
 

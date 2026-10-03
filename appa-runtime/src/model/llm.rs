@@ -47,6 +47,9 @@ pub struct LlmBackend {
     timeout: Duration,
     max_body_bytes: usize,
     gates: ConsultGates,
+    /// The `think` level the deployment declares for ollama consults (`low`/`medium`/
+    /// `high`/`max`), `false`/`off` for no reasoning, or `None` for the provider default.
+    think: Option<String>,
 }
 
 /// The providers the builtin speaks to, closed: each is compiled in and dispatched by
@@ -111,6 +114,7 @@ impl LlmBackend {
             timeout: profile.limits.timeout,
             max_body_bytes,
             gates: gates.clone(),
+            think: profile.think.clone(),
         })
     }
 
@@ -132,7 +136,9 @@ impl LlmBackend {
         let mut attempts = 1;
         loop {
             let permit = acquire_within(&gate, deadline, "llm", name).await?;
-            let answered = self.attempt(client, prompt, deadline, seen.as_deref_mut()).await;
+            let answered = self
+                .attempt(client, prompt, deadline, seen.as_deref_mut(), self.think.as_deref())
+                .await;
             drop(permit);
             let retryable = matches!(
                 answered,
@@ -160,9 +166,10 @@ impl LlmBackend {
         prompt: &ModelPrompt,
         deadline: tokio::time::Instant,
         seen: Option<&mut Transcript>,
+        think: Option<&str>,
     ) -> Result<serde_json::Value, NoAnswerReason> {
         let mut raw_response = None;
-        let answered = match tokio::time::timeout_at(deadline, self.prompt(client, prompt)).await {
+        let answered = match tokio::time::timeout_at(deadline, self.prompt(client, prompt, think)).await {
             Err(_) => Err(NoAnswerReason::Timeout),
             Ok(Err(error)) => {
                 tracing::debug!(%error, "the llm consult failed");
@@ -188,13 +195,18 @@ impl LlmBackend {
         answered
     }
 
-    async fn prompt(&self, client: &LlmClient, prompt: &ModelPrompt) -> Result<String, PromptError> {
+    async fn prompt(
+        &self,
+        client: &LlmClient,
+        prompt: &ModelPrompt,
+        think: Option<&str>,
+    ) -> Result<String, PromptError> {
         let max_tokens = answer_budget(&prompt.input, self.max_body_bytes);
         match client {
-            LlmClient::Anthropic(client) => run(client.completion_model(&self.model), prompt, max_tokens).await,
-            LlmClient::OpenAi(client) => run(client.completion_model(&self.model), prompt, max_tokens).await,
-            LlmClient::Gemini(client) => run(client.completion_model(&self.model), prompt, max_tokens).await,
-            LlmClient::Ollama(client) => run(client.completion_model(&self.model), prompt, max_tokens).await,
+            LlmClient::Anthropic(client) => run(client.completion_model(&self.model), prompt, max_tokens, think).await,
+            LlmClient::OpenAi(client) => run(client.completion_model(&self.model), prompt, max_tokens, think).await,
+            LlmClient::Gemini(client) => run(client.completion_model(&self.model), prompt, max_tokens, think).await,
+            LlmClient::Ollama(client) => run(client.completion_model(&self.model), prompt, max_tokens, think).await,
         }
     }
 }
@@ -205,17 +217,26 @@ async fn run<M: CompletionModel + 'static>(
     model: M,
     prompt: &ModelPrompt,
     max_tokens: u64,
+    think: Option<&str>,
 ) -> Result<String, PromptError> {
     let schema = schemars::Schema::try_from(prompt.schema.clone()).expect("every consult schema is a JSON object");
-    AgentBuilder::new(model)
+    let mut builder = AgentBuilder::new(model)
         .preamble(&prompt.system)
         .output_schema_raw(schema)
         .output_mode(OutputMode::Native)
         .max_tokens(max_tokens)
-        .temperature(0.0)
-        .build()
-        .prompt(prompt.input.as_str())
-        .await
+        .temperature(0.0);
+    // `think` caps a reasoning model's chain-of-thought so classification stays
+    // fast. `false`/`off` disables it outright; a level keeps the minimum the
+    // model needs for judgment; `None` leaves the provider default.
+    if let Some(think) = think {
+        let value = match think {
+            "false" | "off" => serde_json::json!(false),
+            level => serde_json::json!(level),
+        };
+        builder = builder.additional_params(serde_json::json!({ "think": value }));
+    }
+    builder.build().prompt(prompt.input.as_str()).await
 }
 
 /// A provider's non-success status is a non-success, however rig carried it; a
@@ -349,6 +370,7 @@ mod tests {
                 timeout: Duration::from_millis(1500),
                 max_concurrent,
             },
+            think: None,
         }
     }
 

@@ -423,6 +423,12 @@ impl RawPlugin {
                 path: path.to_path_buf(),
                 host: self.host,
             }),
+            // opencode-appa is source-distributed as a plugin file copied into
+            // OpenCode's global plugins directory, not a marketplace installer.
+            Host::Opencode => Err(ManifestError::Host {
+                path: path.to_path_buf(),
+                host: self.host,
+            }),
             Host::ClaudeCode => {
                 absent(self.images.is_some(), "images")?;
                 Ok(Plugin::ClaudeCode {
